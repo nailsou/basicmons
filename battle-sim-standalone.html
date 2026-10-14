@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Doubles Battle Sim</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#eef1f4;--card:#fff;--ink:#1b2733;--mute:#6a7885;--line:#cfd7de;--me:#2563c9;--foe:#c93a32;--ko:#9aa5af;--ok:#2f9e5b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12181e;--card:#1b242d;--ink:#e6ecf1;--mute:#93a1ad;--line:#2f3d49;--me:#6ea2ff;--foe:#ff7d74;--ko:#55636f;--ok:#58c98a}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.4}
+main{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.5rem;margin:0 0 4px}h2{font-size:1.05rem;margin:22px 0 8px}
+p.sub{color:var(--mute);margin:0 0 12px}
+button{font:inherit;color:inherit;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.pick{background:var(--card);border:2px solid var(--line);border-radius:10px;padding:10px;text-align:left}
+.pick.on{border-color:var(--me)}
+.pick b{display:block;font-size:1.05rem}
+.stats{color:var(--mute);font-size:.85rem}
+.badge{float:right;background:var(--me);color:#fff;border-radius:99px;min-width:22px;text-align:center;font-size:.8rem;padding:0 6px}
+.btn{background:var(--ink);color:var(--bg);border:0;border-radius:8px;padding:10px 18px;font-weight:600;margin-top:12px}
+.btn:disabled{opacity:.35;cursor:default}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mon{background:var(--card);border:2px solid var(--line);border-radius:10px;padding:10px;min-height:88px}
+.foe .mon{border-color:var(--foe)}.me .mon{border-color:var(--me)}
+.mon.ko{border-color:var(--ko);color:var(--ko)}
+.mon.empty{border-style:dashed;color:var(--mute)}
+.bar{height:8px;background:var(--line);border-radius:4px;margin:6px 0 2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok)}
+.side-label{font-weight:700;margin:14px 0 6px}
+.foe .side-label{color:var(--foe)}.me .side-label{color:var(--me)}
+.tg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tg button{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:4px 8px;font-size:.85rem}
+.tg button:disabled{opacity:.4;cursor:default}
+.tg button.sel{background:var(--me);color:#fff;border-color:var(--me)}
+.bench{color:var(--mute);font-size:.9rem;margin-top:6px}
+#log{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;max-height:240px;overflow-y:auto;font-size:.92rem}
+#log div{padding:2px 0}#log .t{font-weight:700;margin-top:6px}
+.banner{font-size:1.2rem;font-weight:700;margin:10px 0}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:16px}
+summary{font-weight:700;cursor:pointer}details p,details li{margin:6px 0}details ul{padding-left:20px}
+input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:100%;margin-top:8px}
+.btn.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+#chat{max-width:720px;margin:0 auto;padding:0 16px 32px}
+#chat[hidden]{display:none}
+#msgs{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;height:140px;overflow-y:auto;font-size:.92rem;margin-top:6px}
+#cf{display:flex;gap:8px}#cf input{margin-top:8px}#cf .btn{margin-top:8px;padding:8px 14px;width:auto}
+.cme{color:var(--me)}.cfoe{color:var(--foe)}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script></head><body><main id="app"></main>
+<aside id="chat" hidden><h2 id="ctitle">Chat</h2><div id="msgs"></div>
+<form id="cf"><input id="ci" maxlength="140" placeholder="Message your opponent" autocomplete="off"><button class="btn">Send</button></form></aside>
+<script>
+const DEX=[["Fire",14,5,5],["Water",21,3,2],["Grass",16,4,3],["Rock",16,6,1],["Fighting",17,4,4],["Flying",12,5,6]]
+ .map(([name,hp,atk,spe])=>({name,hp,atk,spe}));
+const mk=d=>({...d,max:d.hp});
+const BEATS={Grass:["Water","Rock"],Water:["Fire","Rock"],Fire:["Grass"],Flying:["Fighting","Grass"],Fighting:["Rock"],Rock:["Flying","Fire"]};
+const mod=(a,d)=>BEATS[a.name].includes(d.name)?1:BEATS[d.name].includes(a.name)?-1:0;
+const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
+const rnd32=()=>Math.random()*4294967296>>>0;
+const seeded=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+let G={phase:"menu"},app=document.getElementById("app"),MP=false,room=null,unsub=null;
+const alive=m=>m&&m.hp>0;
+const lost=s=>!s.active.some(alive)&&!s.bench.length;
+
+/* ---------- username (shared through room presence; stored only in this browser) ---------- */
+const cleanName=v=>typeof v==="string"?v.replace(/[\u0000-\u001f\u007f]/g,"").trim().slice(0,16):"";
+let NAME="";try{NAME=cleanName(localStorage.getItem("dbs-name")||"")}catch(e){}
+function setName(v){
+  NAME=cleanName(v);
+  try{localStorage.setItem("dbs-name",NAME)}catch(e){}
+  for(const c of [LOBBY,GAME])if(c.r)c.r.presence({name:NAME||null}).catch(()=>{});
+}
+const esc=t=>t.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const oppName=()=>{try{const o=MP&&room&&opp();return o?cleanName(o.presence&&o.presence.name):""}catch(e){return""}};
+
+/* ---------- chat: lobby channel (everyone on the page) + game channel (you and your opponent) ---------- */
+// Both ride on room presence. Lobby = the shared base room; game = the named room.
+const mkChan=()=>({list:[],seen:new Set(),mine:[],seq:0,r:null});
+const LOBBY=mkChan(),GAME=mkChan();
+const chanNow=()=>(G.phase==="menu"||G.phase==="lobby")?LOBBY:GAME;
+function resetGame(){GAME.list.length=0;GAME.seen.clear();GAME.mine=[];GAME.seq=0;GAME.r=null}
+function chatDraw(){
+  const c=chanNow(),box=document.getElementById("msgs");
+  document.getElementById("chat").hidden=!c.r;
+  if(!c.r)return;
+  document.getElementById("ctitle").textContent=c===LOBBY?"Lobby chat":"Chat with your opponent";
+  document.getElementById("ci").placeholder=c===LOBBY?"Message everyone in the lobby":"Message your opponent";
+  box.textContent="";
+  if(!c.list.length){const e=document.createElement("div");e.className="stats";e.textContent="No messages yet.";box.append(e)}
+  c.list.forEach(m=>{const d=document.createElement("div"),b=document.createElement("b");
+    b.className=m.me?"cme":"cfoe";b.textContent=(m.me?(NAME||"You"):m.who)+": ";d.append(b,document.createTextNode(m.text));box.append(d)});
+  box.scrollTop=box.scrollHeight;
+}
+function chatSync(c){
+  if(!c.r)return;let ch=false;
+  for(const p of c.r.peers()){
+    if(p.isMe||p.kind!=="viewer"||!p.presence||!Array.isArray(p.presence.chat))continue;
+    for(const m of p.presence.chat){
+      if(!m||!Number.isInteger(m.n)||typeof m.t!=="string"||!Number.isFinite(m.ts))continue;
+      const k=p.peer+":"+m.n;if(c.seen.has(k))continue;c.seen.add(k);
+      c.list.push({me:false,who:cleanName(p.presence.name)||(c===LOBBY?"Player "+p.peer.slice(0,4):"Opponent"),text:m.t.slice(0,140),ts:m.ts});ch=true;
+    }
+  }
+  if(ch){c.list.sort((a,b)=>a.ts-b.ts);if(chanNow()===c)chatDraw()}
+}
+function chatSend(text){
+  const c=chanNow();text=text.trim().slice(0,140);if(!text||!c.r)return;
+  const ts=Date.now();c.mine.push({n:++c.seq,t:text,ts});c.mine=c.mine.slice(-6);
+  c.list.push({me:true,text,ts});chatDraw();
+  c.r.presence({chat:c.mine}).catch(()=>{});
+}
+document.getElementById("cf").onsubmit=e=>{e.preventDefault();const i=document.getElementById("ci");chatSend(i.value);i.value=""};
+
+
+/* ---------- setup ---------- */
+function begin(mine,theirs){
+  G={phase:"battle",turn:1,log:[],choice:[null,null],locked:false,myActs:{},myReps:{},p1:true,rng:Math.random,dc:false,
+     me:{active:mine.slice(0,2),bench:mine.slice(2)},foe:{active:theirs.slice(0,2),bench:theirs.slice(2)}};
+  G.log.push({t:1,m:"Battle start! You lead with "+mine[0].name+" and "+mine[1].name+". The opponent leads with "+theirs[0].name+" and "+theirs[1].name+"."});
+}
+function startSolo(){
+  MP=false;
+  begin(G.picks.map(i=>mk(DEX[i])),shuffle(DEX).slice(0,4).map(mk));
+  render();
+}
+/* ---------- peer-to-peer networking (WebRTC via PeerJS) ----------
+   Exposes the tiny "room" surface the game uses: presence(patch), peers(), onPeers(fn), leave().
+   The first player to use a game code registers the id "dbs-<code>" and waits; the second connects to it. */
+function makeRoom(peer,myId,hostMode,firstConn){
+  const mine={},st={other:null,remote:{}},hs=new Set();let conn=null;
+  const notify=()=>hs.forEach(h=>{try{h({})}catch(e){}});
+  const send=()=>{if(conn&&conn.open)try{conn.send({t:"p",p:mine})}catch(e){}};
+  const attach=c=>{
+    conn=c;
+    const up=()=>{if(c!==conn)return;st.other=c.peer;send();notify()};
+    if(c.open)up();else c.on("open",up);
+    c.on("data",d=>{
+      if(c!==conn||!d||d.t!=="p"||!d.p||typeof d.p!=="object"||Array.isArray(d.p))return;
+      let n=0;try{n=JSON.stringify(d.p).length}catch(e){return}
+      if(n>8192)return;
+      st.remote=d.p;notify();
+    });
+    c.on("close",()=>{if(c===conn){conn=null;st.other=null;st.remote={};notify()}});
+    c.on("error",()=>{});
+  };
+  peer.on("error",()=>{});
+  if(hostMode)peer.on("connection",c=>{if(conn){c.on("open",()=>{try{c.close()}catch(e){}});return}attach(c)});
+  else attach(firstConn);
+  return{
+    presence(patch){
+      for(const k of Object.keys(patch)){if(patch[k]===null)delete mine[k];else mine[k]=patch[k]}
+      send();return Promise.resolve();
+    },
+    peers(){
+      const me={peer:myId,isMe:true,sameTab:true,kind:"viewer",guest:false,by:null,presence:mine};
+      return st.other?[me,{peer:st.other,isMe:false,sameTab:false,kind:"viewer",guest:false,by:null,presence:st.remote}]:[me];
+    },
+    onPeers(h){hs.add(h);return()=>hs.delete(h)},
+    leave(){hs.clear();try{peer.destroy()}catch(e){}return Promise.resolve()}
+  };
+}
+function openRoom(code){
+  const id="dbs-"+code;
+  return new Promise((resolve,reject)=>{
+    const host=new Peer(id);let done=false;
+    const fail=e=>{if(done)return;done=true;try{host.destroy()}catch(_){}reject(e)};
+    host.on("open",()=>{if(done)return;done=true;resolve(makeRoom(host,id,true,null))});
+    host.on("error",e=>{
+      if(done)return;
+      if(!e||e.type!=="unavailable-id")return fail(e||{type:"unknown"});
+      done=true;try{host.destroy()}catch(_){}
+      // Someone already holds this code: connect to them.
+      const g=new Peer();let ok=false;
+      const bad=er=>{if(ok)return;ok=true;clearTimeout(t);try{g.destroy()}catch(_){}reject(er||{type:"unknown"})};
+      const t=setTimeout(()=>bad({type:"timeout"}),12000);
+      g.on("error",bad);
+      g.on("open",gid=>{
+        const c=g.connect(id,{reliable:true});
+        c.on("open",()=>{if(ok)return;ok=true;clearTimeout(t);resolve(makeRoom(g,gid,false,c))});
+        c.on("error",bad);
+      });
+    });
+    setTimeout(()=>fail({type:"timeout"}),12000);
+  });
+}
+const netError=e=>{
+  const t=e&&e.type;
+  if(t==="peer-unavailable"||t==="timeout")return"Couldn't connect to the other player. Check the game code and try again.";
+  if(t==="network"||t==="server-error"||t==="socket-error"||t==="socket-closed")return"Couldn't reach the matchmaking service. Check your connection and try again.";
+  return"Couldn't join the game"+(t?" ("+t+")":"")+".";
+};
+const shareLink=c=>location.href.split("#")[0]+"#"+c;
+async function joinGame(code){
+  if(typeof Peer==="undefined")return"Couldn't load the connection library. Check your internet connection and reload the page.";
+  try{room=await openRoom(code)}catch(e){return netError(e)}
+  MP=true;G={phase:"lobby",code,picks:[],seed:rnd32(),locked:false};
+  room.presence({seed:G.seed,name:NAME||null});
+  GAME.r=room;unsub=room.onPeers(()=>{chatSync(GAME);mpStep()});
+  render();mpStep();return"";
+}
+async function leaveGame(){
+  if(unsub)unsub();unsub=null;
+  if(room)try{await room.leave()}catch(e){}
+  room=null;MP=false;G={phase:"menu"};resetGame();render();
+}
+const opp=()=>{
+  const ps=room.peers().filter(p=>!p.isMe&&p.kind==="viewer");
+  return G.oppPeer?ps.find(p=>p.peer===G.oppPeer):ps.find(p=>p.presence&&p.presence.seed!=null)||ps[0];
+};
+const validTeam=t=>Array.isArray(t)&&t.length===4&&t.every(i=>Number.isInteger(i)&&i>=0&&i<6)&&new Set(t).size===4;
+
+/* ---------- multiplayer sync (lockstep: both pages run the same simulation) ---------- */
+function mpStep(){
+  if(!MP||!room)return;
+  const o=opp();
+  if(G.phase==="lobby"){G.phase=o?"pick":"lobby";return render()}
+  if(G.phase==="over")return;
+  if(G.oppPeer&&!o){if(!G.dc){G.dc=true;render()}return}
+  if(!o)return;
+  const pr=o.presence||{};
+  if(G.phase==="pick"){
+    const tl=validTeam(pr.team);if(tl!==!!G.oppTeam){G.oppTeam=tl;render()}
+    if(G.locked&&validTeam(pr.team)&&Number.isInteger(pr.seed)){
+      const mine=G.picks.map(i=>mk(DEX[i])),theirs=pr.team.map(i=>mk(DEX[i])),seed=G.seed;
+      const me=room.peers().find(p=>p.sameTab);
+      begin(mine,theirs);
+      G.p1=me.peer<o.peer;G.oppPeer=o.peer;G.rng=seeded((seed^pr.seed)>>>0);
+      render();
+    }
+    return;
+  }
+  if(G.phase==="battle"&&G.locked){
+    const oa=(pr.acts||{})[G.turn];
+    if(Array.isArray(oa))turn(oa);
+  }else if(G.phase==="waitrep")finishRep();
+  else if(G.phase==="battle"){const l=Array.isArray((pr.acts||{})[G.turn]);if(l!==!!G.oppLocked){G.oppLocked=l;render()}}
+}
+function fight(){
+  if(!MP){turn();return}
+  G.locked=true;
+  G.myActs[G.turn]=[0,1].map(i=>alive(G.me.active[i])?G.choice[i]:null);
+  for(const k of Object.keys(G.myActs))if(+k<G.turn-2)delete G.myActs[k];
+  room.presence({acts:G.myActs});render();mpStep();
+}
+function lockTeam(){
+  G.locked=true;room.presence({team:G.picks.slice(),seed:G.seed});render();mpStep();
+}
+
+/* ---------- opponent AI (solo) ---------- */
+// Switch only if type-disadvantaged vs every living opposing mon.
+// Target ranking: 1 fast kill, 2 second-to-last KO, 3 super effective, 4 avoid not-very-effective, 5 highest ATK, 6 highest SPE.
+function cpuPlan(){
+  const F=G.foe,M=G.me,plan=[];
+  const foes=M.active.map((m,s)=>({m,s})).filter(x=>alive(x.m));
+  if(!foes.length)return plan;
+  const left=foes.length+M.bench.length;
+  const free=F.bench.map((m,i)=>i).filter(i=>alive(F.bench[i]));
+  const cmp=(a,b)=>{for(let k=0;k<a.length;k++)if(a[k]!==b[k])return a[k]-b[k];return 0};
+  F.active.forEach((m,i)=>{
+    if(!alive(m))return;
+    if(free.length&&foes.every(x=>mod(x.m,m)>0)){
+      const sc=bi=>foes.reduce((n,x)=>n+mod(F.bench[bi],x.m),0);
+      const top=Math.max(...free.map(sc)),pool=free.filter(b=>sc(b)===top);
+      const pick=pool[Math.random()*pool.length|0];free.splice(free.indexOf(pick),1);
+      plan.push({m,side:"foe",slot:i,tgt:{sw:pick}});return;
+    }
+    const key=x=>{const e=mod(m,x.m),kill=m.atk+e>=x.m.hp;
+      return [kill&&m.spe>x.m.spe?1:0,kill&&left===2?1:0,e>0?1:0,e>=0?1:0,x.m.atk,x.m.spe]};
+    let best=[];
+    for(const x of foes){const k=key(x);
+      if(!best.length||cmp(k,best[0].k)>0)best=[{x,k}];else if(cmp(k,best[0].k)===0)best.push({x,k})}
+    const c=best[Math.random()*best.length|0].x;
+    plan.push({m,side:"foe",slot:i,tgt:{side:"me",slot:c.s}});
+  });
+  return plan;
+}
+// Solo AI replacement: best total matchup vs. your living active mons.
+function cpuReplace(){
+  const F=G.foe,foes=G.me.active.filter(alive);
+  F.active.forEach((m,i)=>{
+    if(alive(m)||!F.bench.length)return;
+    const sc=b=>foes.reduce((n,x)=>n+mod(b,x),0);
+    const top=Math.max(...F.bench.map(sc)),pool=F.bench.filter(b=>sc(b)===top);
+    sendIn("foe",i,pool[Math.random()*pool.length|0]);
+  });
+}
+
+/* ---------- turn resolution ---------- */
+const clean=(c,s)=>{
+  if(!c||typeof c!=="object")return null;
+  if(c.sw!=null)return Number.isInteger(c.sw)&&alive(G[s].bench[c.sw])?{sw:c.sw}:null;
+  return (c.side==="foe"||c.side==="ally")&&(c.slot===0||c.slot===1)?{side:c.side,slot:c.slot}:null;
+};
+function turn(oc){
+  const mine=G.me.active.map((m,i)=>alive(m)&&clean(G.choice[i],"me")?{m,side:"me",slot:i,tgt:clean(G.choice[i],"me")}:null).filter(Boolean);
+  const theirs=MP?G.foe.active.map((m,i)=>alive(m)&&clean(oc[i],"foe")?{m,side:"foe",slot:i,tgt:clean(oc[i],"foe")}:null).filter(Boolean):cpuPlan();
+  const acts=(MP&&!G.p1?[theirs,mine]:[mine,theirs]).flat();
+  // Speed order; ties use the shared seeded RNG (placeholder until tie rules are defined).
+  acts.forEach(a=>a.r=G.rng());
+  acts.sort((a,b)=>b.m.spe-a.m.spe||a.r-b.r);
+  const L=m=>G.log.push({m});
+  G.log.push({t:G.turn,m:"Turn "+G.turn});
+  const who=s=>s==="me"?(NAME?NAME+"'s ":"Your "):(oppName()?oppName()+"'s ":"Foe ");
+  for(const a of acts.filter(a=>a.tgt.sw!=null)){
+    const s=G[a.side],inn=s.bench[a.tgt.sw];s.bench[a.tgt.sw]=a.m;s.active[a.slot]=inn;
+    L((a.side==="me"?"You withdraw ":"Opponent withdraws ")+a.m.name+" and send"+(a.side==="me"?"":"s")+" out "+inn.name+"!");
+  }
+  for(const a of acts.filter(a=>a.tgt.sw==null)){
+    if(!alive(a.m))continue;
+    const own=a.side;let side=a.tgt.side==="ally"?own:(own==="me"?"foe":"me");
+    let slot=a.tgt.slot,t=G[side].active[slot];
+    if(!alive(t)&&side!==own){const o=G[side].active[1-slot];if(alive(o)){slot=1-slot;t=o}}
+    if(!alive(t)){L(who(own)+a.m.name+" attacked, but there was no target.");continue}
+    const e=mod(a.m,t),d=a.m.atk+e;t.hp=Math.max(0,t.hp-d);
+    L(who(own)+a.m.name+" hit "+who(side)+t.name+" for "+d+(e>0?" (super effective, +1)":e<0?" (not very effective, -1)":"")+" ("+t.hp+"/"+t.max+" HP)."+(t.hp===0?" "+t.name+" was knocked out!":""));
+  }
+  afterTurn();
+}
+function sendIn(side,slot,mon){
+  const b=G[side].bench;b.splice(b.indexOf(mon),1);G[side].active[slot]=mon;
+  G.log.push({m:(side==="me"?"You send":"Opponent sends")+" out "+mon.name+"!"});
+}
+const need=s=>{const S=G[s],slots=S.bench.length?[0,1].filter(i=>!alive(S.active[i])):[];return{slots,real:slots.length>0&&S.bench.length>slots.length}};
+function fill(side,slots,idxs){
+  const B=[...G[side].bench];let mons=idxs?idxs.map(i=>B[i]):null;
+  if(!mons||mons.some(x=>!x)||new Set(mons).size!==mons.length)mons=B.slice(0,slots.length);
+  slots.slice(0,mons.length).forEach((s,k)=>sendIn(side,s,mons[k]));
+}
+function afterTurn(){
+  G.nM=need("me");G.nF=need("foe");G.myRep=null;
+  if(G.nM.real){G.phase="replace";G.need=G.nM.slots;G.rep=G.nM.slots.map(()=>null);render();return}
+  finishRep();
+}
+function confirmSend(){
+  G.myRep=G.rep.slice();
+  if(MP){G.myReps[G.turn]=G.myRep;for(const k of Object.keys(G.myReps))if(+k<G.turn-2)delete G.myReps[k];room.presence({reps:G.myReps})}
+  G.phase="battle";finishRep();
+}
+function finishRep(){
+  let fr=null;
+  if(MP&&G.nF.real){
+    const o=opp();fr=o&&o.presence&&(o.presence.reps||{})[G.turn];
+    if(!Array.isArray(fr)){G.phase="waitrep";render();return}
+  }
+  if(MP)fill("foe",G.nF.slots,fr);else cpuReplace();
+  fill("me",G.nM.slots,G.nM.real?G.myRep:null);
+  conclude();
+}
+function conclude(){
+  if(lost(G.me)||lost(G.foe)){G.phase="over";G.win=lost(G.foe)&&!lost(G.me)?"me":lost(G.me)&&!lost(G.foe)?"foe":"draw"}
+  else{G.phase="battle";G.turn++;G.choice=[null,null];G.locked=false;G.oppLocked=false}
+  render();
+}
+
+/* ---------- rendering ---------- */
+function monCard(m){
+  if(!m)return '<div class="mon empty">Empty</div>';
+  const ko=m.hp<=0;
+  return `<div class="mon ${ko?"ko":""}"><b>${m.name}</b> ${ko?"(KO)":""}
+  <div class="bar"><i style="width:${m.hp/m.max*100}%"></i></div>
+  <div class="stats">${m.hp}/${m.max} HP · ATK ${m.atk} · SPE ${m.spe}</div></div>`;
+}
+function render(){renderMain();chatDraw()}
+function renderMain(){
+  if(G.phase==="menu"){
+    app.innerHTML=`<h1>Doubles Battle Sim</h1><p class="sub">Choose how to play.</p>
+    <label class="stats" for="nm">Username (shown in chat and to your opponent)</label><input id="nm" maxlength="16" placeholder="Choose a username" autocomplete="off">
+    <div class="row"><div class="mon"><b>Vs computer</b><p class="stats">Play solo against the AI.</p><button class="btn" id="sp">Play</button></div>
+    <div class="mon"><b>Vs a friend</b><p class="stats">You both open this page and enter the same game code.</p>
+    <input id="code" maxlength="20" placeholder="Game code" autocomplete="off"><button class="btn" id="mp">Join game</button><div class="stats" id="err"></div></div></div>
+    <details open><summary>How to play</summary>
+    <p>A two-on-two battle. Knock out all four of the other side's Pokémon to win.</p>
+    <ul>
+    <li><b>Teams:</b> each player picks 4 of the 6 Pokémon. The first two you pick start on the field; the other two wait in back, hidden from your opponent.</li>
+    <li><b>Stats:</b> HP is how much damage a Pokémon can take. ATK is how much damage its attack deals. SPE decides who moves first.</li>
+    <li><b>Each turn,</b> both players choose in secret, at the same time. Every Pokémon on your field either attacks any other Pokémon on the field (including your own partner) or switches with a back Pokémon.</li>
+    <li><b>Order:</b> switches happen first. Then attacks resolve from highest SPE to lowest. Speed ties are random for now. A Pokémon knocked out before it moves doesn't attack. If its target is already knocked out, the attack goes to the other foe, or fails if no foe is left or it was aimed at an ally.</li>
+    <li><b>Damage</b> equals the attacker's ATK. There are no random damage rolls.</li>
+    <li><b>Types:</b> an attack deals +1 damage if the attacker's type beats the target's, and −1 if the target's type beats the attacker's.
+      <br>Grass beats Water, Rock. Water beats Fire, Rock. Fire beats Grass. Flying beats Fighting, Grass. Fighting beats Rock. Rock beats Flying, Fire.</li>
+    <li><b>Knockouts:</b> at the end of the turn, each fainted Pokémon is replaced from the back. If you have more than one option, you choose.</li>
+    </ul></details>`;
+    document.getElementById("code").value=(location.hash||"").slice(1).toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,20)||Math.random().toString(36).slice(2,8);
+    const nm=document.getElementById("nm");nm.value=NAME;nm.oninput=()=>setName(nm.value);
+    document.getElementById("sp").onclick=()=>{MP=false;G={phase:"pick",picks:[]};render()};
+    document.getElementById("mp").onclick=async()=>{
+      const c=document.getElementById("code").value.toLowerCase().replace(/[^a-z0-9]/g,"");
+      {const x=document.getElementById("err");if(x)x.textContent="Connecting…"}
+      const e=await joinGame(c||Math.random().toString(36).slice(2,8));
+      if(e){const x=document.getElementById("err");if(x)x.textContent=e}
+    };
+    return;
+  }
+  if(G.phase==="lobby"){
+    app.innerHTML=`<h1>Doubles Battle Sim</h1><p class="sub">Game code: <b>${G.code}</b>. Send your friend this link, or have them enter the code on this page:</p>
+    <input readonly value="${esc(shareLink(G.code))}" onclick="this.select()">
+    <div class="banner">Waiting for your friend…</div><button class="btn alt" id="back">Cancel</button>`;
+    document.getElementById("back").onclick=leaveGame;return;
+  }
+  if(G.phase==="pick"){
+    app.innerHTML=`<h1>Doubles Battle Sim</h1><p class="sub">Pick 4 of 6. The first two you tap are your leads; the other two stay hidden in back.</p>
+    <div class="grid">${DEX.map((d,i)=>{const n=G.picks.indexOf(i);return `<button class="pick ${n>=0?"on":""}" data-i="${i}" ${G.locked?"disabled":""}>${n>=0?`<span class="badge">${n+1}</span>`:""}<b>${d.name}</b><span class="stats">HP ${d.hp} · ATK ${d.atk} · SPE ${d.spe}</span></button>`}).join("")}</div>
+    <button class="btn" id="go" ${G.picks.length===4&&!G.locked?"":"disabled"}>${MP?"Lock in team":"Start battle"}</button>
+    ${MP&&G.oppTeam?'<div class="banner">Your friend has locked in their team.</div>':""}${MP&&G.locked?'<div class="banner">Waiting for your friend to lock in…</div>':""}
+    ${MP?'<button class="btn alt" id="back">Leave</button>':'<button class="btn alt" id="back">Back</button>'}`;
+    app.querySelectorAll(".pick").forEach(b=>b.onclick=()=>{const i=+b.dataset.i,k=G.picks.indexOf(i);
+      if(k>=0)G.picks.splice(k,1);else if(G.picks.length<4)G.picks.push(i);render()});
+    document.getElementById("go").onclick=MP?lockTeam:startSolo;
+    document.getElementById("back").onclick=MP?leaveGame:()=>{G={phase:"menu"};render()};
+    return;
+  }
+  let ctl="";
+  if(G.phase==="battle"&&!G.locked){
+    ctl=`${MP&&G.oppLocked?'<div class="banner">Your opponent has locked in their moves.</div>':""}<h2>Turn ${G.turn}: choose moves</h2><div class="row">`+G.me.active.map((m,i)=>{
+      if(!alive(m))return `<div class="mon empty">No Pokémon</div>`;
+      const opts=[];
+      [0,1].forEach(s=>{const f=G.foe.active[s];if(alive(f))opts.push({side:"foe",slot:s,label:"Foe "+f.name})});
+      const al=G.me.active[1-i];if(alive(al))opts.push({side:"ally",slot:1-i,label:"Ally "+al.name});
+      G.me.bench.forEach((b,bi)=>{if(alive(b))opts.push({side:"sw",slot:bi,label:"Switch to "+b.name})});
+      const c=G.choice[i],oc=G.choice[1-i];
+      return `<div class="mon"><b>${m.name}</b> will…<div class="tg">${opts.map(o=>{const sel=c&&(o.side==="sw"?c.sw===o.slot:c.side===o.side&&c.slot===o.slot);const dis=o.side==="sw"&&oc&&oc.sw===o.slot;return `<button data-m="${i}" data-s="${o.side}" data-l="${o.slot}" ${dis?"disabled":""} class="${sel?"sel":""}">${o.side==="sw"?o.label:"Attack "+o.label}</button>`}).join("")}</div></div>`}).join("")+`</div>
+      <button class="btn" id="fight" ${G.me.active.every((m,i)=>!alive(m)||G.choice[i])?"":"disabled"}>${MP?"Lock in moves":"Fight"}</button>`;
+  }else if(G.phase==="battle"||G.phase==="waitrep"){
+    ctl=`<div class="banner">Waiting for your opponent…</div>`;
+  }else if(G.phase==="replace"){
+    ctl=`<h2>Choose who to send in</h2><div class="row">`+G.need.map((s,k)=>`<div class="mon"><b>${G.me.active[s].name}</b> fainted. Send in:<div class="tg">${G.me.bench.map((b,bi)=>`<button data-k="${k}" data-b="${bi}" class="${G.rep[k]===bi?"sel":""}">${b.name} (${b.hp}/${b.max})</button>`).join("")}</div></div>`).join("")+`</div><button class="btn" id="send" ${G.rep.every(x=>x!=null)?"":"disabled"}>Send out</button>`;
+  }else{
+    ctl=`<div class="banner">${G.win==="me"?"You win!":G.win==="foe"?"You lose.":"Draw."}</div><button class="btn" id="again">${MP?"Back to menu":"Play again"}</button>`;
+  }
+  app.innerHTML=`<h1>Doubles Battle Sim</h1>
+  ${G.dc?'<div class="banner">Your opponent disconnected. The battle can\'t continue.</div><button class="btn alt" id="leave">Back to menu</button>':""}
+  <div class="foe"><div class="side-label">${esc(oppName()||(MP?"Opponent":"Computer"))}</div><div class="row">${G.foe.active.map(monCard).join("")}</div>
+  <div class="bench">${G.foe.bench.length} more in back (hidden)</div></div>
+  <div class="me"><div class="side-label">${esc(NAME||"You")}</div><div class="row">${G.me.active.map(monCard).join("")}</div>
+  <div class="bench">In back: ${G.me.bench.length?G.me.bench.map(m=>m.name+" "+m.hp+"/"+m.max).join(", "):"none"}</div></div>
+  ${G.dc?"":ctl}<h2>Log</h2><div id="log">${G.log.map(e=>`<div class="${e.t?"t":""}">${esc(e.m)}</div>`).join("")}</div>`;
+  const lg=document.getElementById("log");lg.scrollTop=lg.scrollHeight;
+  app.querySelectorAll(".tg button[data-m]").forEach(b=>b.onclick=()=>{G.choice[+b.dataset.m]=b.dataset.s==="sw"?{sw:+b.dataset.l}:{side:b.dataset.s,slot:+b.dataset.l};render()});
+  app.querySelectorAll(".tg button[data-k]").forEach(b=>b.onclick=()=>{G.rep[+b.dataset.k]=+b.dataset.b;render()});
+  const on=(id,f)=>{const e=document.getElementById(id);if(e)e.onclick=f};
+  on("fight",fight);on("send",confirmSend);
+  on("again",()=>MP?leaveGame():(G={phase:"pick",picks:[]},render()));
+  on("leave",leaveGame);
+}
+render();
+</script></body></html>
